@@ -1,0 +1,38 @@
+name: Verify Image
+
+on:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    if: github.repository == 'Lynxified/tmp-data-template'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull image fresh
+        run: docker pull ghcr.io/lynxified/guildera-scraper-template:latest
+
+      - name: Report digest
+        run: docker inspect --format='{{index .RepoDigests 0}}' ghcr.io/lynxified/guildera-scraper-template:latest
+
+      - name: Installed playwright version
+        run: |
+          docker run --rm --entrypoint sh ghcr.io/lynxified/guildera-scraper-template:latest -c \
+            'echo "--- package.json dep ---"; node -e "console.log(require(\"/app/package.json\").dependencies.playwright)"; \
+             echo "--- installed playwright ---"; node -e "console.log(require(\"/app/node_modules/playwright/package.json\").version)"; \
+             echo "--- installed playwright-core ---"; node -e "console.log(require(\"/app/node_modules/playwright-core/package.json\").version)"; \
+             echo "--- browsers on disk ---"; ls /ms-playwright'
+
+      - name: Try launching chromium
+        run: |
+          docker run --rm --entrypoint node ghcr.io/lynxified/guildera-scraper-template:latest -e \
+            'const {chromium}=require("/app/node_modules/playwright"); chromium.launch().then(async b=>{console.log("LAUNCH OK", await b.version()); await b.close();}).catch(e=>{console.error("LAUNCH FAIL:", e.message); process.exit(1);})'

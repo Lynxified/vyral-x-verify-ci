@@ -1,0 +1,1 @@
+{ "name": "guildera-scraper", "version": "3.0.0", "private": true, "description": "Guildera X Scraper - saves to WordPress DB", "main": "scraper.js", "scripts": { "scrape": "node scraper.js" }, "dependencies": { "patchright": "^1.0.0" } }
