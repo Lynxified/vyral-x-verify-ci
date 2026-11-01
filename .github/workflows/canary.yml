@@ -1,0 +1,52 @@
+# Daily canary: proves the X chat reader (session, passcode, DOM structure)
+# still works. Fails the job — and GitHub emails you — when it doesn't.
+#
+# The code below is a canary placeholder that is never burned anywhere; a
+# healthy read of the known thread with read_ok=true is the whole assertion.
+name: canary
+
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  reader-health:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            ~/.cache/ms-playwright
+          key: verifier-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Install
+        run: npm install
+
+      - name: Read the known thread
+        env:
+          X_STATE: ${{ secrets.X_STATE }}
+          CHAT_PIN: ${{ secrets.CHAT_PIN }}
+        run: |
+          node chat.js --json --expect-code vyral-CANARY00 --expected lunaticfrom2005 > out.json 2> err.log || true
+          cat out.json
+
+      - name: Assert the reader is healthy
+        run: |
+          jq -e '.read_ok == true' out.json > /dev/null || { echo "reader NOT healthy:"; cat out.json; cat err.log; exit 1; }
+
+      - name: Upload evidence (ids/counts only — no DM text)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: canary-read
+          path: out.json
+          retention-days: 14

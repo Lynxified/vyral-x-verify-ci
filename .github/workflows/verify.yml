@@ -1,0 +1,97 @@
+# One verification job, triggered by the VYRAL site (workflow_dispatch API).
+#
+# Security notes:
+#   - All inputs reach the shell ONLY through env vars (never ${{ inputs.x }}
+#     inline in `run:` — that would be shell-injection-prone).
+#   - The repo is public; every secret lives in Actions secrets:
+#       VYRAL_CALLBACK_URL / VYRAL_CALLBACK_SECRET / X_STATE / CHAT_PIN
+#   - chat.js output never contains DM text — only ids, counts and codes found.
+name: verify
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "chat = read the DM inbox for a code; profile = read profile/timeline"
+        required: true
+        type: choice
+        options: [chat, profile]
+      check_id:
+        description: "pending x_verify_checks row id — echoed back to the callback"
+        required: true
+      code:
+        description: "DM code to look for (chat mode only)"
+        required: false
+        default: ""
+      handle:
+        description: "X handle to read"
+        required: true
+      posts:
+        description: "profile mode: posts to observe"
+        required: false
+        default: "30"
+      scrolls:
+        description: "profile mode: max timeline scrolls"
+        required: false
+        default: "12"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            ~/.cache/ms-playwright
+          key: verifier-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Install
+        run: npm install
+
+      - name: Run reader
+        env:
+          MODE: ${{ inputs.mode }}
+          CODE: ${{ inputs.code }}
+          HANDLE: ${{ inputs.handle }}
+          POSTS: ${{ inputs.posts }}
+          SCROLLS: ${{ inputs.scrolls }}
+          X_STATE: ${{ secrets.X_STATE }}
+          CHAT_PIN: ${{ secrets.CHAT_PIN }}
+        run: |
+          set +e
+          if [ "$MODE" = "chat" ]; then
+            node chat.js --json --expect-code "$CODE" --expected "$HANDLE" > out.json 2> err.log
+          else
+            node verify.js "$HANDLE" --json --posts "$POSTS" --scrolls "$SCROLLS" --min-followers 1000 --min-posts-per-month 10 > out.json 2> err.log
+          fi
+          if ! [ -s out.json ]; then
+            echo '{"ok":false,"read_ok":false,"verdict":"error","error":"runner produced no output"}' > out.json
+          fi
+          # The reader always exits 0 here: the verdict travels via the callback,
+          # not the exit code (a clean read with no match is not a failure).
+          exit 0
+
+      - name: Post result to VYRAL
+        if: always()
+        env:
+          CALLBACK_URL: ${{ secrets.VYRAL_CALLBACK_URL }}
+          CALLBACK_SECRET: ${{ secrets.VYRAL_CALLBACK_SECRET }}
+          MODE: ${{ inputs.mode }}
+          CHECK_ID: ${{ inputs.check_id }}
+        run: |
+          jq --arg id "$CHECK_ID" --arg mode "$MODE" '. + {check_id: $id, mode: $mode}' out.json > result.json 2>/dev/null \
+            || echo "{\"check_id\":\"$CHECK_ID\",\"mode\":\"$MODE\",\"ok\":false,\"verdict\":\"error\",\"error\":\"no runner output\"}" > result.json
+          curl -sS --retry 3 --retry-connrefused --retry-delay 2 \
+            -X POST "$CALLBACK_URL" \
+            -H "content-type: application/json" \
+            -H "x-verifier-secret: $CALLBACK_SECRET" \
+            -d @result.json
+          echo

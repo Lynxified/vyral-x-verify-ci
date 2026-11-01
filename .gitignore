@@ -1,3 +1,7 @@
 node_modules/
 state.json
 state-ci.json
+out.json
+result.json
+err.log
+*.log

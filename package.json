@@ -1,1 +1,14 @@
-{ "name": "guildera-scraper", "version": "3.0.0", "private": true, "description": "Guildera X Scraper - saves to WordPress DB", "main": "scraper.js", "scripts": { "scrape": "node scraper.js" }, "dependencies": { "patchright": "^1.0.0" } }
+{
+  "name": "vyral-x-verify-ci",
+  "version": "1.0.0",
+  "private": true,
+  "description": "VYRAL X verifier runner — GitHub Actions edition (chat DM-code reader + profile/bio scraper)",
+  "main": "chat.js",
+  "scripts": {
+    "verify:chat": "node chat.js --json",
+    "verify:profile": "node verify.js"
+  },
+  "dependencies": {
+    "patchright": "^1.0.0"
+  }
+}
